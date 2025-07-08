@@ -18,9 +18,7 @@ const uint16_t DO_Table[41] = {
     9080, 8900, 8730, 8570, 8410, 8250, 8110, 7960, 7820, 7690,
     7560, 7430, 7300, 7180, 7070, 6950, 6840, 6730, 6630, 6530, 6410};
 
-// Declare variables (defined elsewhere)
-extern uint8_t DOtemp;
-
+    
 // Safe inline function definition
 inline int16_t readDO(uint32_t voltage_mv, uint8_t temperature_c)
 {

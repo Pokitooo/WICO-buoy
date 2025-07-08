@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include "Arduino_Extended.h"
 #include <lib_xcore>
 #include <STM32FreeRTOS.h>
 
@@ -74,9 +75,9 @@ SX1262 lora = new Module(LORA_NSS, LORA_DIO, LORA_NRST, LORA_BUSY, spi1, lora_sp
 
 // Analog devices
 constexpr size_t ADC_BITS(12);
-constexpr float ADC_DIVIDER = ((1 << ADC_BITS - 1));
+constexpr float ADC_DIVIDER = ((1 << ADC_BITS) - 1);
 constexpr float VREF = 3300;
-float voltagePH, voltageEC, voltageDO = 0;
+float voltagePH, voltageEC, voltageDO, voltageTURB, voltageRAIN, voltageFLOW = 0;
 DFRobot_EC ec;
 DFRobot_PH ph;
 
@@ -111,7 +112,22 @@ struct Data
   float mag_z;
 } data;
 
-// Variables
+// Variable
+static bool state;
+
+String constructed_data;
+
+
+
+extern void read_m10s(void *);
+
+extern void read_icm(void *);
+
+extern void read_probe(void *);
+
+extern void construct_data(void *);
+
+extern void print_data(void *);
 
 extern float readTemperature();
 
@@ -125,6 +141,30 @@ void setup()
   i2cMutex = xSemaphoreCreateMutex();
 
   spi1.begin();
+
+  // LoRa
+  int16_t ls = lora.begin(params.center_freq,
+                          params.bandwidth,
+                          params.spreading_factor,
+                          params.coding_rate,
+                          params.sync_word,
+                          params.power,
+                          params.preamble_length);
+  state = state || lora.explicitHeader();
+  state = state || lora.setCRC(true);
+  state = state || lora.autoLDRO();
+
+  if (ls == RADIOLIB_ERR_NONE)
+  {
+    Serial.println("SX1262 initialized successfully!");
+  }
+  else
+  {
+    Serial.print("Initialization failed! Error: ");
+    Serial.println(ls);
+    while (true)
+      ;
+  }
 
   // Onewire
   ds18.begin();
@@ -145,23 +185,24 @@ void setup()
   }
 
   // icm20949 (0x69)
-  if (!icm.begin_I2C())
+  if (icm.begin_I2C(0x69, &i2c1))
   {
-    Serial.println("Failed to find ICM20948 chip");
-    while (1)
-    {
-      delay(10);
-    }
+    icm.setAccelRange(ICM20948_ACCEL_RANGE_2_G);
+    icm.setGyroRange(ICM20948_GYRO_RANGE_500_DPS);
+    icm_accel = icm.getAccelerometerSensor();
+    icm_accel->printSensorDetails();
+    icm_gyro = icm.getGyroSensor();
+    icm_gyro->printSensorDetails();
+    icm_mag = icm.getMagnetometerSensor();
+    icm_mag->printSensorDetails();
   }
-  Serial.println("ICM20948 Found!");
-  icm_accel = icm.getAccelerometerSensor();
-  icm_accel->printSensorDetails();
 
-  icm_gyro = icm.getGyroSensor();
-  icm_gyro->printSensorDetails();
-
-  icm_mag = icm.getMagnetometerSensor();
-  icm_mag->printSensorDetails();
+  xTaskCreate(read_m10s, "", 2048, nullptr, 2, nullptr);
+  xTaskCreate(read_icm, "", 2048, nullptr, 2, nullptr);
+  xTaskCreate(read_probe, "", 2048, nullptr, 2, nullptr);
+  xTaskCreate(construct_data, "", 2048, nullptr, 2, nullptr);
+  // xTaskCreate(print_data, "", 1024, nullptr, 2, nullptr);
+  vTaskStartScheduler();
 }
 
 void read_m10s(void *)
@@ -175,7 +216,7 @@ void read_m10s(void *)
         data.timestamp = m10s.getUnixEpoch(UBLOX_CUSTOM_MAX_WAIT);
         data.gps_latitude = static_cast<double>(m10s.getLatitude(UBLOX_CUSTOM_MAX_WAIT)) * 1.e-7;
         data.gps_longitude = static_cast<double>(m10s.getLongitude(UBLOX_CUSTOM_MAX_WAIT)) * 1.e-7;
-        data.gps_altitude = static_cast<float>(m10s.getAltitudeMSL(UBLOX_CUSTOM_MAX_WAIT)) * 1.e-3f;
+        data.gps_altitude = static_cast<float>(m10s.getAltitude(UBLOX_CUSTOM_MAX_WAIT)) * 1.e-3f;
       }
       xSemaphoreGive(i2cMutex);
     }
@@ -218,29 +259,70 @@ void read_probe(void *)
 {
   for (;;)
   {
-    data.temp = readTemperature();                                             // read your temperature sensor to execute temperature compensation
+    // TEMPERATURE
+    readTemperature(); // read your temperature sensor to execute temperature compensation
+
+    // PH
     voltagePH = analogRead(digitalPinToAnalogInput(pinNametoDigitalPin(DATA_PH))) / ADC_DIVIDER * VREF; // read the ph voltage
-    data.phValue = ph.readPH(voltagePH, data.temp);                            // convert voltage to pH with temperature compensation
+    data.phValue = ph.readPH(voltagePH, data.temp);                                                     // convert voltage to pH with temperature compensation
+
+    // EC
     voltageEC = analogRead(digitalPinToAnalogInput(pinNametoDigitalPin(DATA_EC))) / ADC_DIVIDER * VREF; // read the voltage
-    data.ecValue = ec.readEC(voltageEC, data.temp);                            // convert voltage to EC with temperature compensation
-    DOtemp = readTemperature();
+    data.ecValue = ec.readEC(voltageEC, data.temp);                                                     // convert voltage to EC with temperature compensation
+
+    // DO
     voltageDO = analogRead(digitalPinToAnalogInput(pinNametoDigitalPin(DATA_DO))) / ADC_DIVIDER * VREF;
-    data.doValue = readDO(voltageDO, DOtemp);
+    data.doValue = readDO(voltageDO, data.temp);
+
+    // TURB
+    voltageTURB = analogRead(digitalPinToAnalogInput(pinNametoDigitalPin(DATA_TURB))) / ADC_DIVIDER * VREF;
+
+    // RAIN
+    voltageRAIN = analogRead(digitalPinToAnalogInput(pinNametoDigitalPin(DATA_RAIN))) / ADC_DIVIDER * VREF;
+
+    DELAY(1000);
+  }
+}
+
+void construct_data(void *)
+{
+  for (;;)
+  {
+    constructed_data = "";
+    csv_stream_crlf(constructed_data)
+        << "<10>"
+        << data.counter
+        << data.timestamp
+
+        << data.temp
+        << data.ecValue
+        << data.phValue
+        << data.doValue
+
+        << String(data.gps_latitude, 6)
+        << String(data.gps_longitude, 6)
+        << String(data.gps_altitude, 4)
+
+        << data.acc_x
+        << data.acc_y
+        << data.acc_z
+
+        << data.gyro_x
+        << data.gyro_y
+        << data.gyro_z
+
+        << data.mag_x
+        << data.mag_y
+        << data.mag_z;
+
     DELAY(1000);
   }
 }
 
 void loop()
 {
-  if (Serial.available() > 0)
-  {
-    char cmd = Serial.read();
-    if (cmd == 'c')
-    {
-      ec.calibration(voltageEC, data.temp);
-      ph.calibration(voltagePH, data.temp);
-    }
-  }
+  ec.calibration(voltageEC, data.temp);
+  ph.calibration(voltagePH, data.temp);
 }
 
 float readTemperature()
