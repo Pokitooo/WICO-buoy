@@ -12,53 +12,21 @@
 Radio radio = new RadioModule();
 */
 
-extern SX1262 lora;
-
 // how often to send an uplink - consider legal & FUP constraints - see notes
-const uint32_t uplinkIntervalSeconds = 0UL * 60UL + 1UL; // minutes x seconds
+const uint32_t uplinkIntervalSeconds = 0UL * 60UL + 2UL; // minutes x seconds
 
-#ifndef RADIOLIB_LORAWAN_DEV_ADDR   // Replace with your DevAddr
-#define RADIOLIB_LORAWAN_DEV_ADDR   0x260BC6BE
+#define RADIOLIB_LORAWAN_JOIN_EUI  0x3123123123123213
+
+// the Device EUI & two keys can be generated on the TTN console
+#ifndef RADIOLIB_LORAWAN_DEV_EUI   // Replace with your Device EUI
+#define RADIOLIB_LORAWAN_DEV_EUI   0x70B3D57ED0071E55
 #endif
-
-#ifndef RADIOLIB_LORAWAN_FNWKSINT_KEY   // Replace with your FNwkSInt Key
-#define RADIOLIB_LORAWAN_FNWKSINT_KEY   0xAB, 0x98, 0x67, 0xED, 0xA8, 0xD4, 0xD4, 0x69, 0x10, 0xF1, 0x46, 0x38, 0x12, 0xCE, 0xBA, 0xA7
-
+#ifndef RADIOLIB_LORAWAN_APP_KEY   // Replace with your App Key
+#define RADIOLIB_LORAWAN_APP_KEY   0x79, 0xFA, 0x03, 0x0C, 0xF4, 0xAB, 0xEC, 0xBE, 0xF0, 0x6A, 0x71, 0x2C, 0x95, 0xD8, 0x91, 0x73
 #endif
-#ifndef RADIOLIB_LORAWAN_SNWKSINT_KEY   // Replace with your SNwkSInt Key
-#define RADIOLIB_LORAWAN_SNWKSINT_KEY   0x77, 0x54, 0x49, 0xBC, 0x7A, 0x66, 0xB7, 0x8E, 0xA5, 0xBA, 0x0C, 0x1A, 0xB2, 0x21, 0xB2, 0xAC
-
+#ifndef RADIOLIB_LORAWAN_NWK_KEY   // Put your Nwk Key here
+#define RADIOLIB_LORAWAN_NWK_KEY   0xE0, 0xAC, 0xDA, 0xD7, 0x91, 0xBA, 0x5A, 0x16, 0x9C, 0x67, 0xF1, 0x7C, 0x95, 0x72, 0x65, 0x7A
 #endif
-#ifndef RADIOLIB_LORAWAN_NWKSENC_KEY   // Replace with your NwkSEnc Key
-#define RADIOLIB_LORAWAN_NWKSENC_KEY   0xB9, 0xB1, 0x58, 0x9B, 0x2C, 0x0C, 0x1F, 0x42, 0xB4, 0xA4, 0x63, 0x77, 0x8F, 0x57, 0x2B, 0x41
-
-#endif
-#ifndef RADIOLIB_LORAWAN_APPS_KEY   // Replace with your AppS Key
-#define RADIOLIB_LORAWAN_APPS_KEY   0x14, 0xE9, 0xE1, 0x9E, 0xE9, 0x13, 0x4A, 0x16, 0x40, 0x4E, 0xCC, 0xF5, 0x8F, 0xFE, 0x1A, 0x0A
-
-#endif
-
-// for the curious, the #ifndef blocks allow for automated testing &/or you can
-// put your EUI & keys in to your platformio.ini - see wiki for more tips
-
-// regional choices: EU868, US915, AU915, AS923, AS923_2, AS923_3, AS923_4, IN865, KR920, CN470
-LoRaWANBand_t Region = AS923;
-
-// subband choice: for US915/AU915 set to 2, for CN470 set to 1, otherwise leave on 0
-constexpr uint8_t subBand = 0;
-
-// ============================================================================
-// Below is to support the sketch - only make changes if the notes say so ...
-
-// copy over the EUI's & keys in to the something that will not compile if incorrectly formatted
-inline uint32_t devAddr = RADIOLIB_LORAWAN_DEV_ADDR;
-inline uint8_t fNwkSIntKey[] = {RADIOLIB_LORAWAN_FNWKSINT_KEY};
-inline uint8_t sNwkSIntKey[] = {RADIOLIB_LORAWAN_SNWKSINT_KEY};
-inline uint8_t nwkSEncKey[] = {RADIOLIB_LORAWAN_NWKSENC_KEY};
-inline uint8_t appSKey[] = {RADIOLIB_LORAWAN_APPS_KEY};
-
-// create the LoRaWAN node
-inline LoRaWANNode node(&lora, &Region, subBand);
 
 // result code to text - these are error codes that can be raised when using LoRaWAN
 // however, RadioLib has many more - see https://jgromes.github.io/RadioLib/group__status__codes.html for a complete list

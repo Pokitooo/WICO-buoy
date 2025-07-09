@@ -11,6 +11,7 @@
 
 #include <SPI.h>
 #include "RadioLib.h"
+#include "lorawan_config.h"
 
 #include "DFRobot_PH.h"
 #include "DFRobot_EC.h"
@@ -38,10 +39,10 @@ constexpr PinName LORA_BUSY = PB_8;
 
 // DIGITAL
 constexpr PinName DATA_TEMP = PB_0;
-constexpr PinName DATA_RAIN = PA_6;
+constexpr PinName DATA_FLOW = PA_4;
 
 // ANALOG
-constexpr PinName DATA_FLOW = PA_4;
+constexpr PinName DATA_RAIN = PA_6;
 constexpr PinName DATA_TURB = PA_3;
 constexpr PinName DATA_DO = PA_2;
 constexpr PinName DATA_EC = PA_1;
@@ -60,6 +61,17 @@ SPIClass spi1(pinNametoDigitalPin(MOSI1), pinNametoDigitalPin(MISO1), pinNametoD
 // LoRa
 SPISettings lora_spi_settings(18'000'000, MSBFIRST, SPI_MODE0);
 
+// regional choices: EU868, US915, AU915, AS923, AS923_2, AS923_3, AS923_4, IN865, KR920, CN470
+const LoRaWANBand_t Region = AS923;
+
+// subband choice: for US915/AU915 set to 2, for CN470 set to 1, otherwise leave on 0
+constexpr uint8_t subBand = 0;
+
+uint64_t joinEUI = RADIOLIB_LORAWAN_JOIN_EUI;
+uint64_t devEUI = RADIOLIB_LORAWAN_DEV_EUI;
+uint8_t appKey[] = {RADIOLIB_LORAWAN_APP_KEY};
+uint8_t nwkKey[] = {RADIOLIB_LORAWAN_NWK_KEY};
+
 constexpr struct
 {
   float center_freq = 921.000'000f; // MHz
@@ -72,14 +84,22 @@ constexpr struct
 } params;
 
 SX1262 lora = new Module(LORA_NSS, LORA_DIO, LORA_NRST, LORA_BUSY, spi1, lora_spi_settings);
+LoRaWANNode node(&lora, &Region, subBand);
+
+volatile bool tx_flag = false;
+volatile int16_t lora_state = 0;
+volatile int16_t node_state = 0;
 
 // Analog devices
 constexpr size_t ADC_BITS(12);
 constexpr float ADC_DIVIDER = ((1 << ADC_BITS) - 1);
 constexpr float VREF = 3300;
-float voltagePH, voltageEC, voltageDO, voltageTURB, voltageRAIN, voltageFLOW = 0;
+float voltagePH, voltageEC, voltageDO, voltageTURB, voltageRAIN = 0;
 DFRobot_EC ec;
 DFRobot_PH ph;
+
+// Flow
+volatile int NbTopsFan; // measuring the rising edges of the signal
 
 // Digital devices
 OneWire dataDS(DATA_TEMP);
@@ -91,15 +111,17 @@ struct Data
   uint32_t timestamp;
   uint8_t counter;
 
-  float temp;
-
-  float ecValue;
-  float phValue;
-  float doValue;
-
   double gps_latitude;
   double gps_longitude;
   float gps_altitude;
+
+  float temp;
+  float ecValue;
+  float phValue;
+  float doValue;
+  float turbValue;
+  float rainValue;
+  uint16_t flowValue;
 
   float acc_x;
   float acc_y;
@@ -117,19 +139,24 @@ static bool state;
 
 String constructed_data;
 
-
-
+// Functions
 extern void read_m10s(void *);
 
 extern void read_icm(void *);
 
 extern void read_probe(void *);
 
+extern void read_flow(void *);
+
 extern void construct_data(void *);
 
-extern void print_data(void *);
+extern void transmit_data(void *);
+
+extern void printData(void *);
 
 extern float readTemperature();
+
+extern void rpm();
 
 void setup()
 {
@@ -154,20 +181,23 @@ void setup()
   state = state || lora.setCRC(true);
   state = state || lora.autoLDRO();
 
-  if (ls == RADIOLIB_ERR_NONE)
-  {
-    Serial.println("SX1262 initialized successfully!");
-  }
-  else
-  {
-    Serial.print("Initialization failed! Error: ");
-    Serial.println(ls);
-    while (true)
-      ;
-  }
+  Serial.printf("SX1262 LoRa %s\n", lora_state == RADIOLIB_ERR_NONE ? "SUCCESS" : "FAILED");
+  if (lora_state != RADIOLIB_ERR_NONE)
+    Serial.printf("Initialization failed! Error: %d\n", lora_state);
+
+  node_state = node.beginOTAA(joinEUI, devEUI, nwkKey, appKey);
+  node_state = node.activateOTAA();
+
+  Serial.printf("LoRaWAN Node %s\n", node_state == RADIOLIB_ERR_NONE ? "SUCCESS" : "FAILED");
+  if (node_state != RADIOLIB_ERR_NONE)
+    Serial.printf("Initialization failed! Error: %d\n", node_state);
 
   // Onewire
   ds18.begin();
+
+  // Digital
+  pinMode(digitalPinToInterrupt(pinNametoDigitalPin(DATA_FLOW)), INPUT);
+  attachInterrupt(0, rpm, RISING);
 
   // Analog
   analogReadResolution(ADC_BITS);
@@ -200,8 +230,10 @@ void setup()
   xTaskCreate(read_m10s, "", 2048, nullptr, 2, nullptr);
   xTaskCreate(read_icm, "", 2048, nullptr, 2, nullptr);
   xTaskCreate(read_probe, "", 2048, nullptr, 2, nullptr);
-  xTaskCreate(construct_data, "", 2048, nullptr, 2, nullptr);
-  // xTaskCreate(print_data, "", 1024, nullptr, 2, nullptr);
+  xTaskCreate(read_flow, "", 2048, nullptr, 2, nullptr);
+  xTaskCreate(construct_data, "", 1024, nullptr, 2, nullptr);
+  xTaskCreate(transmit_data, "", 2048, nullptr, 2, nullptr);
+  xTaskCreate(printData, "", 1024, nullptr, 2, nullptr);
   vTaskStartScheduler();
 }
 
@@ -284,6 +316,28 @@ void read_probe(void *)
   }
 }
 
+void read_flow(void *)
+{
+  for (;;)
+  {
+    NbTopsFan = 0;                           // Set NbTops to 0 ready for flowValueulations
+    interrupts();                            // Enables interrupts
+    DELAY(1000);                             // Wait 1 second
+    noInterrupts();                          // Disable interrupts
+    data.flowValue = (NbTopsFan * 60 / 7.5); //(Pulse frequency x 60) / 7.5Q, = flow rate in L/hour
+  }
+}
+
+void transmit_data(void *)
+{
+  for (;;)
+  {
+    node_state = node.sendReceive(constructed_data.c_str(), 1);
+    ++data.counter;
+    DELAY(uplinkIntervalSeconds * 1'000);
+  }
+}
+
 void construct_data(void *)
 {
   for (;;)
@@ -293,29 +347,95 @@ void construct_data(void *)
         << "<10>"
         << data.counter
         << data.timestamp
-
+        << String(data.gps_latitude, 6)
+        << String(data.gps_longitude, 6)
+        << String(data.gps_altitude, 4)
         << data.temp
         << data.ecValue
         << data.phValue
         << data.doValue
-
-        << String(data.gps_latitude, 6)
-        << String(data.gps_longitude, 6)
-        << String(data.gps_altitude, 4)
-
+        << data.turbValue
+        << data.rainValue
+        << data.flowValue
         << data.acc_x
         << data.acc_y
         << data.acc_z
-
         << data.gyro_x
         << data.gyro_y
         << data.gyro_z
-
         << data.mag_x
         << data.mag_y
         << data.mag_z;
-
     DELAY(1000);
+  }
+}
+
+void printData(void *)
+{
+  for (;;)
+  {
+    Serial.println("=== Sensor Data ===");
+
+    Serial.print("Timestamp: ");
+    Serial.println(data.timestamp);
+    Serial.print("Counter: ");
+    Serial.println(data.counter);
+
+    Serial.print("GPS Latitude: ");
+    Serial.println(data.gps_latitude, 8); // Keep high precision
+    Serial.print("GPS Longitude: ");
+    Serial.println(data.gps_longitude, 8);
+    Serial.print("GPS Altitude: ");
+    Serial.println(data.gps_altitude);
+
+    Serial.print("Temperature: ");
+    Serial.println(data.temp);
+    Serial.print("EC Value: ");
+    Serial.println(data.ecValue);
+    Serial.print("pH Value: ");
+    Serial.println(data.phValue);
+    Serial.print("DO Value: ");
+    Serial.println(data.doValue);
+    Serial.print("Turbidity: ");
+    Serial.println(data.turbValue);
+    Serial.print("Rain: ");
+    Serial.println(data.rainValue);
+    Serial.print("Flow: ");
+    Serial.println(data.flowValue);
+
+    Serial.print("Accelerometer X: ");
+    Serial.println(data.acc_x);
+    Serial.print("Accelerometer Y: ");
+    Serial.println(data.acc_y);
+    Serial.print("Accelerometer Z: ");
+    Serial.println(data.acc_z);
+
+    Serial.print("Gyroscope X: ");
+    Serial.println(data.gyro_x);
+    Serial.print("Gyroscope Y: ");
+    Serial.println(data.gyro_y);
+    Serial.print("Gyroscope Z: ");
+    Serial.println(data.gyro_z);
+
+    Serial.print("Magnetometer X: ");
+    Serial.println(data.mag_x);
+    Serial.print("Magnetometer Y: ");
+    Serial.println(data.mag_y);
+    Serial.print("Magnetometer Z: ");
+    Serial.println(data.mag_z);
+
+    Serial.print("Voltage pH: ");
+    Serial.println(voltagePH, 3); // Keep 3 decimals
+    Serial.print("Voltage EC: ");
+    Serial.println(voltageEC, 3);
+    Serial.print("Voltage DO: ");
+    Serial.println(voltageDO, 3);
+    Serial.print("Voltage TURB: ");
+    Serial.println(voltageTURB, 3);
+    Serial.print("Voltage RAIN: ");
+    Serial.println(voltageRAIN, 3);
+
+    Serial.println("===================");
   }
 }
 
@@ -330,4 +450,9 @@ float readTemperature()
   ds18.requestTemperatures();
   data.temp = ds18.getTempCByIndex(0);
   return data.temp;
+}
+
+void rpm() // This is the function that the interupt calls
+{
+  ++NbTopsFan; // This function measures the rising and falling edge of the hall effect sensors signal
 }

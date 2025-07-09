@@ -12,11 +12,11 @@
             "type": "platformio-debug",
             "request": "launch",
             "name": "PIO Debug",
-            "executable": "c:/Users/Space AC/Desktop/bouy/.pio/build/main/firmware.elf",
+            "executable": "A:/PlatformIO/BUOY/.pio/build/main/firmware.elf",
             "projectEnvName": "main",
-            "toolchainBinDir": "C:/Users/Space AC/.platformio/packages/toolchain-gccarmnoneeabi/bin",
+            "toolchainBinDir": "C:/Users/ASUS/.platformio/packages/toolchain-gccarmnoneeabi/bin",
             "internalConsoleOptions": "openOnSessionStart",
-            "svdPath": "C:/Users/Space AC/.platformio/platforms/ststm32/misc/svd/STM32F411xx.svd",
+            "svdPath": "C:/Users/ASUS/.platformio/platforms/ststm32/misc/svd/STM32F411xx.svd",
             "preLaunchTask": {
                 "type": "PlatformIO",
                 "task": "Pre-Debug"
@@ -26,21 +26,21 @@
             "type": "platformio-debug",
             "request": "launch",
             "name": "PIO Debug (skip Pre-Debug)",
-            "executable": "c:/Users/Space AC/Desktop/bouy/.pio/build/main/firmware.elf",
+            "executable": "A:/PlatformIO/BUOY/.pio/build/main/firmware.elf",
             "projectEnvName": "main",
-            "toolchainBinDir": "C:/Users/Space AC/.platformio/packages/toolchain-gccarmnoneeabi/bin",
+            "toolchainBinDir": "C:/Users/ASUS/.platformio/packages/toolchain-gccarmnoneeabi/bin",
             "internalConsoleOptions": "openOnSessionStart",
-            "svdPath": "C:/Users/Space AC/.platformio/platforms/ststm32/misc/svd/STM32F411xx.svd"
+            "svdPath": "C:/Users/ASUS/.platformio/platforms/ststm32/misc/svd/STM32F411xx.svd"
         },
         {
             "type": "platformio-debug",
             "request": "launch",
             "name": "PIO Debug (without uploading)",
-            "executable": "c:/Users/Space AC/Desktop/bouy/.pio/build/main/firmware.elf",
+            "executable": "A:/PlatformIO/BUOY/.pio/build/main/firmware.elf",
             "projectEnvName": "main",
-            "toolchainBinDir": "C:/Users/Space AC/.platformio/packages/toolchain-gccarmnoneeabi/bin",
+            "toolchainBinDir": "C:/Users/ASUS/.platformio/packages/toolchain-gccarmnoneeabi/bin",
             "internalConsoleOptions": "openOnSessionStart",
-            "svdPath": "C:/Users/Space AC/.platformio/platforms/ststm32/misc/svd/STM32F411xx.svd",
+            "svdPath": "C:/Users/ASUS/.platformio/platforms/ststm32/misc/svd/STM32F411xx.svd",
             "loadMode": "manual"
         }
     ]

@@ -5,7 +5,6 @@
 
 // Calibration settings
 #define TWO_POINT_CALIBRATION 0
-#define READ_TEMP (25)
 
 #define CAL1_V (1600)
 #define CAL1_T (25)

@@ -1,9 +1,9 @@
-stm32duino/STM32duino FreeRTOS
 lib-xcore=https://gitlab.com/vtneil/lib-xcore.git
-https://github.com/DFRobot/DFRobot_EC
-paulstoffregen/OneWire
-dfrobot/DFRobot_PH
-jgromes/RadioLib
-adafruit/Adafruit ICM20X
-sparkfun/SparkFun u-blox GNSS v3
 milesburton/DallasTemperature
+dfrobot/DFRobot_PH
+sparkfun/SparkFun u-blox GNSS v3
+https://github.com/DFRobot/DFRobot_EC
+stm32duino/STM32duino FreeRTOS
+adafruit/Adafruit ICM20X
+paulstoffregen/OneWire
+jgromes/RadioLib
