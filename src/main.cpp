@@ -2,6 +2,7 @@
 #include "Arduino_Extended.h"
 #include <lib_xcore>
 #include <STM32FreeRTOS.h>
+#include <EEPROM.h>
 
 #include <Wire.h>
 #include <SparkFun_u-blox_GNSS_v3.h>
@@ -18,6 +19,7 @@
 #include "DF_Sensor.h"
 #include <OneWire.h>
 #include <DallasTemperature.h>
+#include "WQI.h"
 
 #define UBLOX_CUSTOM_MAX_WAIT (250u)
 #define DELAY(MS) vTaskDelay(pdMS_TO_TICKS(MS))
@@ -99,11 +101,11 @@ DFRobot_EC ec;
 DFRobot_PH ph;
 
 // Flow
-volatile int NbTopsFan; // measuring the rising edges of the signal
+uint16_t NbTopsFan; // measuring the rising edges of the signal
 
 // Digital devices
-OneWire dataDS(DATA_TEMP);
-DallasTemperature ds18(&dataDS);
+OneWire DS18(DATA_TEMP);
+DallasTemperature ds18(&DS18);
 
 // Data
 struct Data
@@ -121,7 +123,9 @@ struct Data
   float doValue;
   float turbValue;
   float rainValue;
-  uint16_t flowValue;
+  float flowValue;
+  float WQI;
+  String index;
 
   float acc_x;
   float acc_y;
@@ -132,6 +136,7 @@ struct Data
   float mag_x;
   float mag_y;
   float mag_z;
+  uint16_t heading;
 } data;
 
 // Variable
@@ -160,7 +165,7 @@ extern void rpm();
 
 void setup()
 {
-  Serial.begin(460800);
+  Serial.begin(115200);
   delay(2000);
 
   i2c1.begin();
@@ -197,7 +202,7 @@ void setup()
 
   // Digital
   pinMode(digitalPinToInterrupt(pinNametoDigitalPin(DATA_FLOW)), INPUT);
-  attachInterrupt(0, rpm, RISING);
+  attachInterrupt(digitalPinToInterrupt(pinNametoDigitalPin(DATA_FLOW)), rpm, RISING);
 
   // Analog
   analogReadResolution(ADC_BITS);
@@ -227,12 +232,12 @@ void setup()
     icm_mag->printSensorDetails();
   }
 
-  xTaskCreate(read_m10s, "", 2048, nullptr, 2, nullptr);
-  xTaskCreate(read_icm, "", 2048, nullptr, 2, nullptr);
+  // xTaskCreate(read_m10s, "", 2048, nullptr, 2, nullptr);
+  // xTaskCreate(read_icm, "", 2048, nullptr, 2, nullptr);
   xTaskCreate(read_probe, "", 2048, nullptr, 2, nullptr);
-  xTaskCreate(read_flow, "", 2048, nullptr, 2, nullptr);
-  xTaskCreate(construct_data, "", 1024, nullptr, 2, nullptr);
-  xTaskCreate(transmit_data, "", 2048, nullptr, 2, nullptr);
+  // xTaskCreate(read_flow, "", 2048, nullptr, 2, nullptr);
+  // xTaskCreate(construct_data, "", 1024, nullptr, 2, nullptr);
+  // xTaskCreate(transmit_data, "", 2048, nullptr, 2, nullptr);
   xTaskCreate(printData, "", 1024, nullptr, 2, nullptr);
   vTaskStartScheduler();
 }
@@ -324,7 +329,8 @@ void read_flow(void *)
     interrupts();                            // Enables interrupts
     DELAY(1000);                             // Wait 1 second
     noInterrupts();                          // Disable interrupts
-    data.flowValue = (NbTopsFan * 60 / 7.5); //(Pulse frequency x 60) / 7.5Q, = flow rate in L/hour
+    data.flowValue = (NbTopsFan * 60 / 7.5) * 0.002194; //(Pulse frequency x 60) / 7.5Q, = flow rate in L/hour
+    DELAY(1000);
   }
 }
 
@@ -335,6 +341,26 @@ void transmit_data(void *)
     node_state = node.sendReceive(constructed_data.c_str(), 1);
     ++data.counter;
     DELAY(uplinkIntervalSeconds * 1'000);
+  }
+}
+
+void calculate_wqi(void *)
+{
+  for (;;)
+  {
+    data.WQI = calculateWQI(data.turbValue, data.doValue, data.ecValue, data.phValue, data.temp);
+    data.index = evaluateWQI(data.WQI);
+    DELAY(1000);
+  }
+}
+
+void calculate_heading(void *)
+{
+  for (;;)
+  {
+    data.heading = atan2(data.mag_y, data.mag_x) * (180.0 / PI);
+    if (data.heading < 0) data.heading += 360;
+    DELAY(1000);
   }
 }
 
@@ -357,15 +383,15 @@ void construct_data(void *)
         << data.turbValue
         << data.rainValue
         << data.flowValue
+        << data.WQI
+        << data.index
         << data.acc_x
         << data.acc_y
         << data.acc_z
         << data.gyro_x
         << data.gyro_y
         << data.gyro_z
-        << data.mag_x
-        << data.mag_y
-        << data.mag_z;
+        << data.heading;
     DELAY(1000);
   }
 }
@@ -435,7 +461,13 @@ void printData(void *)
     Serial.print("Voltage RAIN: ");
     Serial.println(voltageRAIN, 3);
 
+    Serial.print("Water Quality Index (WQI): ");
+    Serial.println(data.WQI);
+    Serial.print("INDEX: ");
+    Serial.println(data.index);
+
     Serial.println("===================");
+    DELAY(4000);
   }
 }
 
@@ -448,7 +480,7 @@ void loop()
 float readTemperature()
 {
   ds18.requestTemperatures();
-  data.temp = ds18.getTempCByIndex(0);
+  data.temp = ds18.getTempCByIndex(DATA_TEMP);
   return data.temp;
 }
 
