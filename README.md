@@ -73,9 +73,3 @@ acc_x, acc_y, acc_z, gyro_x, gyro_y, gyro_z, heading
 - **LoRa PHY:** 915 MHz, 125 kHz bandwidth, SF12, CR 4/8, sync word `0x12`, 22 dBm, 16-symbol preamble, explicit header, CRC enabled
 - **LoRaWAN:** US915, sub-band 2. The keys and uplink interval are set in [include/lorawan_config.h](include/lorawan_config.h).
 
-### Current status
-
-- The LoRaWAN OTAA join (`beginOTAA` / `activateOTAA`) is commented out.
-- The GNSS is initialised, but its reading task is not started, so the GPS fields stay at zero.
-- The IMU initialisation and reading task are commented out, and `calculate_heading` is never scheduled.
-- The rain sensor is wired but not read.
