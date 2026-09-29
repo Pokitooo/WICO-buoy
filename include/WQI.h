@@ -74,7 +74,7 @@ String evaluateWQI(float wqiValue) {
     } else if (wqiValue < 100) {
         WQI_index = "Very poor water quality";
     } else {
-        WQI_index = "Unsuitable for drink";
+        WQI_index = "Highly contaminated water";
     }
 
     return WQI_index;

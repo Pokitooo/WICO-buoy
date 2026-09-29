@@ -333,7 +333,7 @@ void read_probe(void *)
   for (;;)
   {
     // TEMPERATURE
-    readTemperature(); // read your temperature sensor to execute temperature compensation
+    data.temp = readTemperature(); // read your temperature sensor to execute temperature compensation
 
     // PH
     voltagePH = analogRead(digitalPinToAnalogInput(pinNametoDigitalPin(DATA_PH))) / ADC_DIVIDER * VREF; // read the ph voltage
@@ -345,7 +345,7 @@ void read_probe(void *)
 
     // DO
     voltageDO = analogRead(digitalPinToAnalogInput(pinNametoDigitalPin(DATA_DO))) / ADC_DIVIDER * VREF;
-    data.doValue = readDO(voltageDO, data.temp) + 1.25;
+    data.doValue = readDO(voltageDO, data.temp) / 1000;
 
     // TURB
     voltageTURB = analogRead(digitalPinToAnalogInput(pinNametoDigitalPin(DATA_TURB))) / ADC_DIVIDER * VREF;
@@ -388,7 +388,7 @@ void calculate_wqi(void *)
 {
   for (;;)
   {
-    data.WQI = calculateWQI(data.turbValue, data.doValue / 1000, data.ecValue, data.phValue, data.temp);
+    data.WQI = calculateWQI(data.turbValue, data.doValue, data.ecValue, data.phValue, data.temp);
     data.index = evaluateWQI(data.WQI);
     DELAY(1000);
   }
@@ -443,32 +443,44 @@ void printData(void *)
   {
     Serial.println("=== Sensor Data ===");
 
-    Serial.print("Timestamp: ");
-    Serial.println(data.timestamp);
-    Serial.print("Counter: ");
-    Serial.println(data.counter);
+    // Serial.print("Timestamp: ");
+    // Serial.println(data.timestamp);
+    // Serial.print("Counter: ");
+    // Serial.println(data.counter);
 
-    Serial.print("GPS Latitude: ");
-    Serial.println(data.gps_latitude, 8); // Keep high precision
-    Serial.print("GPS Longitude: ");
-    Serial.println(data.gps_longitude, 8);
-    Serial.print("GPS Altitude: ");
-    Serial.println(data.gps_altitude);
+    // Serial.print("GPS Latitude: ");
+    // Serial.println(data.gps_latitude, 8); // Keep high precision
+    // Serial.print("GPS Longitude: ");
+    // Serial.println(data.gps_longitude, 8);
+    // Serial.print("GPS Altitude: ");
+    // Serial.println(data.gps_altitude);
 
     Serial.print("Temperature: ");
-    Serial.println(data.temp);
+    Serial.print(data.temp);
+    Serial.println(" °C");
+
     Serial.print("EC Value: ");
-    Serial.println(data.ecValue);
+    Serial.print(data.ecValue);
+    Serial.println(" µS/cm");
+
     Serial.print("pH Value: ");
     Serial.println(data.phValue);
+
     Serial.print("DO Value: ");
-    Serial.println(data.doValue);
+    Serial.print(data.doValue);
+    Serial.println(" mg/L");
+
     Serial.print("Turbidity: ");
-    Serial.println(data.turbValue);
+    Serial.print(data.turbValue);
+    Serial.println(" NTU");
+
     // Serial.print("Rain: ");
-    // Serial.println(data.rainValue);
+    // Serial.print(data.rainValue);
+    // Serial.println(" mm");
+
     Serial.print("Flow: ");
-    Serial.println(data.flowValue);
+    Serial.print(data.flowValue);
+    Serial.println(" L/hr");
 
     // Serial.print("Accelerometer X: ");
     // Serial.println(data.acc_x);
@@ -502,12 +514,12 @@ void printData(void *)
     // Serial.print("Voltage RAIN: ");
     // Serial.println(voltageRAIN, 3);
 
-    // Serial.print("Water Quality Index (WQI): ");
-    // Serial.println(data.WQI);
-    // Serial.print("INDEX: ");
-    // Serial.println(data.index);
+    Serial.print("Water Quality Index (WQI): ");
+    Serial.println(data.WQI);
+    Serial.print("INDEX: ");
+    Serial.println(data.index);
 
-    // Serial.println("===================");
+    Serial.println("===================");
     DELAY(1000);
   }
 }
@@ -521,7 +533,7 @@ void loop()
 float readTemperature()
 {
   ds18.requestTemperatures();
-  data.temp = ds18.getTempCByIndex(DATA_TEMP);
+  data.temp = ds18.getTempCByIndex(0);
   return data.temp;
 }
 
